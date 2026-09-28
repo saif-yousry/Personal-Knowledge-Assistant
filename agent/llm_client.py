@@ -14,8 +14,9 @@ from groq import Groq, GroqError
 
 from config import settings
 from agent.tool_executer import TOOL_REGISTRY
+import logging
 
-
+logging.basicConfig(level=logging.INFO)
 class LLMResponseError(Exception):
     """Raised when the provider's output can't be processed.
     Controller catches this and decides whether to retry, nudge
@@ -73,8 +74,12 @@ def call_llm(messages: list[dict], system_prompt: str) -> dict:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
 
+    logger = logging.getLogger("uvicorn")
+
     try:
         completion = client.chat.completions.create(**kwargs)
+        completion2 = client.chat.completions.create(**kwargs).model_dump_json()
+        logging.info("Groq response: %s", completion2)
     except GroqError as e:
         raise LLMResponseError(f"Groq request failed: {e}") from e
 

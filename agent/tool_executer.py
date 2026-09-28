@@ -16,12 +16,16 @@ testing_tools.py / a future tools/weather.py etc. and add them to the dict.
 
 from typing import Callable
 from agent.tool_result import ToolResult
-from agent.tools import search
+# Reason: Imported `send_email` alongside `search` so it can be registered in TOOL_REGISTRY.
+from agent.tools import search, send_email
 
 ToolFn = Callable[[dict], ToolResult]
 
+# Reason: Added "send_email" to TOOL_REGISTRY. When the LLM decides to call `send_email`,
+# `execute_tool` performs an O(1) dictionary lookup to invoke the `send_email` tool.
 TOOL_REGISTRY: dict[str, ToolFn] = {
     "search": search,
+    "send_email": send_email,
 }
 
 

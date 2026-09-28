@@ -21,14 +21,18 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 10
 
 
-def run(state: AgentState) -> str:
+# Reason: Added optional `system_prompt` argument so callers can pass specialized prompts
+# (e.g. `EMAIL_AGENT_SYSTEM_PROMPT` for incoming email automation) while maintaining backward
+# compatibility with existing chat routes by defaulting to `SYSTEM_PROMPT`.
+def run(state: AgentState, system_prompt: str | None = None) -> str:
     """
     Run the agent loop until the model produces a final answer.
     Returns the final text response to the user.
     """
+    active_prompt = system_prompt or SYSTEM_PROMPT
     for round_num in range(MAX_TOOL_ROUNDS):
         try:
-            message = call_llm(state.messages, SYSTEM_PROMPT)
+            message = call_llm(state.messages, active_prompt)
         except LLMResponseError as e:
             logger.error("LLM call failed: %s", e)
             return f"Sorry, something went wrong: {e}"

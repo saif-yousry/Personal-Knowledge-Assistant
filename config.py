@@ -36,10 +36,22 @@ class Settings(BaseSettings):
     # Must be EXACTLY one of the "Authorized redirect URIs" registered for the
     # OAuth client in Google Cloud Console (e.g. /api/v1/auth/google/callback).
     GOOGLE_REDIRECT_URI: str
-    # Comma-separated list of OAuth scopes.
+    # Reason: Added https://www.googleapis.com/auth/gmail.send to Google scopes so
+    # the application can send outgoing emails via the Gmail API on behalf of authenticated users.
     GOOGLE_SCOPES: str = (
-        "openid,email,profile,https://www.googleapis.com/auth/gmail.readonly"
+        "openid,email,profile,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send"
     )
+
+    # Reason: Email delivery settings (SMTP and fallback sender).
+    # Necessary to enable sending emails via standard SMTP servers or automated fallback
+    # when Google OAuth credentials are not used.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: SecretStr = SecretStr("")
+    SMTP_USE_TLS: bool = True
+    DEFAULT_SENDER_EMAIL: str = "saifeldinyousry2005@gmail.com"
+
 
     # Groq / RAG
     GROQ_API_KEY: SecretStr

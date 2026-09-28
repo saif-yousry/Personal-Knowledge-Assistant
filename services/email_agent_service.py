@@ -32,6 +32,7 @@ from services.email_service import email_service
 
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Reason: Helper to safely extract or generate email recipients to guarantee
 # that the `Email` Pydantic model's `at_least_one_recipient` validator is satisfied.
@@ -218,11 +219,11 @@ def process_incoming_email(
     Process an incoming email with the agent, send a reply, and persist both
     in the vector store upon successful delivery.
     """
-    logging.INFO("Starting automated incoming email processing...")
+    logger.info("Starting automated incoming email processing...")
 
     # Step 1: Parse the incoming email to extract metadata and body
     metadata, incoming_email_obj = parse_incoming_email(incoming_data)
-    logging.INFO("Parsed incoming email ID=%s from '%s'", incoming_email_obj.id, incoming_email_obj.sender)
+    logger.info("Parsed incoming email ID=%s from '%s'", incoming_email_obj.id, incoming_email_obj.sender)
 
     # Step 2: Format sender, subject, and body into a structured representation
     structured_user_prompt = format_email_for_agent(
@@ -238,8 +239,12 @@ def process_incoming_email(
     state = AgentState(user_input=structured_user_prompt)
 
     # Run the agentic loop (tools `search` and `send_email` are automatically supplied via TOOL_REGISTRY)
-    agent_final_text = run(state, system_prompt=EMAIL_AGENT_SYSTEM_PROMPT)
-    logging.INFO("Agent processing complete. Final reply snippet: %s", agent_final_text[:120])
+    agent_final_text = run(
+        state,
+        system_prompt=EMAIL_AGENT_SYSTEM_PROMPT,
+        user_id=user_id,
+    )
+    logger.info("Agent processing complete. Final reply snippet: %s", agent_final_text[:120])
 
     # Step 5: Check whether `send_email` was successfully called during the agent run
     current_sent_emails = email_service.get_sent_emails()
@@ -258,7 +263,7 @@ def process_incoming_email(
 
     # Step 6: "After successful sending the new email and reply are stored in the vector store."
     if email_was_sent:
-        logging.INFO("Detected successful email dispatch. Preparing both emails for vector store ingestion.")
+        logger.info("Detected successful email dispatch. Preparing both emails for vector store ingestion.")
 
         # Determine reply content from sent email record or tool calls
         if last_sent:
@@ -296,7 +301,7 @@ def process_incoming_email(
                 chunker=chunker,
             )
             chunks_stored = rag_pipeline.run([incoming_email_obj, reply_email_obj])
-            logging.INFO(
+            logger.info(
                 "Ingested %d chunks into vector store for incoming (%s) and reply (%s)",
                 chunks_stored,
                 incoming_email_obj.id,

@@ -328,6 +328,16 @@
 
         <!-- Chat -->
         <div class="card">
+            <h2>Groq API Key</h2>
+            <div id="groq-key-status" class="status"></div>
+            <label for="groq-api-key">API key</label>
+            <input type="password" id="groq-api-key" autocomplete="new-password" placeholder="Enter your Groq API key">
+            <button class="btn-primary" id="groq-key-save-btn" onclick="saveGroqApiKey()">Save key</button>
+            <button class="btn-reset" id="groq-key-clear-btn" onclick="clearGroqApiKey()">Remove key</button>
+        </div>
+
+        <!-- Chat -->
+        <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <h2 style="margin-bottom: 0;">Chat with Agent</h2>
                 <button class="btn-reset" onclick="resetChat()">Reset</button>
@@ -1084,6 +1094,7 @@
             document.getElementById('user-greeting').textContent = 'Welcome, ' + (userEmail || '');
             checkHealth();
             checkGoogleStatus();
+            refreshGroqApiKeyStatus();
         }
 
         function logout() {
@@ -1213,6 +1224,80 @@
                     el.textContent = 'Not connected. Connect your Google account to ingest emails.';
                 }
             } catch {}
+        }
+
+        async function refreshGroqApiKeyStatus() {
+            const el = document.getElementById('groq-key-status');
+            try {
+                const res = await fetch('/api/v1/settings/groq-api-key', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                el.className = data.configured ? 'status success' : 'status info';
+                if (data.source === 'user') {
+                    el.textContent = 'Your key is active in server memory until restart.';
+                } else if (data.source === 'environment') {
+                    el.textContent = 'Using the server-configured Groq API key.';
+                } else {
+                    el.textContent = 'No Groq API key is configured.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Could not check Groq API key status.';
+            }
+        }
+
+        async function saveGroqApiKey() {
+            const el = document.getElementById('groq-key-status');
+            const input = document.getElementById('groq-api-key');
+            const btn = document.getElementById('groq-key-save-btn');
+            const apiKey = input.value.trim();
+            if (!apiKey) {
+                el.className = 'status error';
+                el.textContent = 'Enter a Groq API key first.';
+                return;
+            }
+
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/v1/settings/groq-api-key', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authToken,
+                    },
+                    body: JSON.stringify({ api_key: apiKey }),
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not save the key.');
+                input.value = '';
+                await refreshGroqApiKeyStatus();
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = e.message || 'Could not save the Groq API key.';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function clearGroqApiKey() {
+            const el = document.getElementById('groq-key-status');
+            try {
+                const res = await fetch('/api/v1/settings/groq-api-key', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not remove the key.');
+                document.getElementById('groq-api-key').value = '';
+                await refreshGroqApiKeyStatus();
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = e.message || 'Could not remove the Groq API key.';
+            }
         }
 
         // Auto-login if token exists

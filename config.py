@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
 
     # Groq / RAG
-    GROQ_API_KEY: SecretStr
+    GROQ_API_KEY: SecretStr = SecretStr("")
     GROQ_MODEL: str = "qwen/qwen3.6-27b"
     VECTOR_STORE_DIR: str
 

@@ -11,20 +11,49 @@ tool_calls objects directly, no manual JSON parsing needed.
 from typing import Any
 
 from groq import Groq, GroqError
+from pydantic import SecretStr
 
 from config import settings
 from agent.tool_executer import TOOL_REGISTRY
 import logging
 
 logging.basicConfig(level=logging.INFO)
+
+_user_groq_api_keys: dict[int, SecretStr] = {}
+
+
+def set_user_groq_api_key(user_id: int, api_key: str) -> None:
+    _user_groq_api_keys[user_id] = SecretStr(api_key)
+
+
+def clear_user_groq_api_key(user_id: int) -> None:
+    _user_groq_api_keys.pop(user_id, None)
+
+
+def get_user_groq_api_key_source(user_id: int) -> str | None:
+    if user_id in _user_groq_api_keys:
+        return "user"
+    if settings.GROQ_API_KEY.get_secret_value():
+        return "environment"
+    return None
+
+
 class LLMResponseError(Exception):
     """Raised when the provider's output can't be processed.
     Controller catches this and decides whether to retry, nudge
     the model, or bail out with an error to the user."""
 
 
-def _get_client() -> Groq:
-    return Groq(api_key=settings.GROQ_API_KEY.get_secret_value())
+def _get_client(user_id: int | None = None) -> Groq:
+    user_api_key = _user_groq_api_keys.get(user_id) if user_id is not None else None
+    api_key = (
+        user_api_key.get_secret_value()
+        if user_api_key is not None
+        else settings.GROQ_API_KEY.get_secret_value()
+    )
+    if not api_key:
+        raise LLMResponseError("Groq API key is not configured for this user.")
+    return Groq(api_key=api_key)
 
 
 def _build_tools() -> list[dict[str, Any]]:
@@ -50,14 +79,18 @@ def _build_tools() -> list[dict[str, Any]]:
     return tools
 
 
-def call_llm(messages: list[dict], system_prompt: str) -> dict:
+def call_llm(
+    messages: list[dict],
+    system_prompt: str,
+    user_id: int | None = None,
+) -> dict:
     """Send the conversation to Groq and return the raw response message.
 
     Returns the assistant message dict from the API. The caller
     (controller) inspects `message.tool_calls` to decide whether
     to execute tools or treat `message.content` as the final answer.
     """
-    client = _get_client()
+    client = _get_client(user_id)
 
     provider_messages = [
         {"role": "system", "content": system_prompt},

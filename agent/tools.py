@@ -16,7 +16,7 @@ from initializer import store
 VALID_SOURCES = {"email", "slack", "discord", "telegram", "pdf"}
 
 
-def search(arguments: dict) -> ToolResult:
+def search(arguments: dict, user_id: int | None = None) -> ToolResult:
     """Search the vector store, optionally filtered by source type."""
     query = arguments.get("query")
     if not query:
@@ -79,7 +79,7 @@ search.schema = {
 # Reason: Added `send_email` tool function to enable the agentic LLM to compose and
 # dispatch email responses to recipients. This is required so the agent can autonomously
 # handle incoming emails, reply to inquiries, and communicate externally.
-def send_email(arguments: dict) -> ToolResult:
+def send_email(arguments: dict, user_id: int | None = None) -> ToolResult:
     """Send an email using the configured email delivery service."""
     to = arguments.get("to")
     if not to:
@@ -116,6 +116,7 @@ def send_email(arguments: dict) -> ToolResult:
             to=to_str,
             subject=str(subject),
             body=str(body),
+            user_id=user_id,
         )
         return ToolResult(
             tool_name="send_email",

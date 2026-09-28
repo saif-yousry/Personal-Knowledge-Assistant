@@ -24,7 +24,12 @@ MAX_TOOL_ROUNDS = 10
 # Reason: Added optional `system_prompt` argument so callers can pass specialized prompts
 # (e.g. `EMAIL_AGENT_SYSTEM_PROMPT` for incoming email automation) while maintaining backward
 # compatibility with existing chat routes by defaulting to `SYSTEM_PROMPT`.
-def run(state: AgentState, system_prompt: str | None = None) -> str:
+def run(
+    state: AgentState,
+    system_prompt: str | None = None,
+    *,
+    user_id: int | None = None,
+) -> str:
     """
     Run the agent loop until the model produces a final answer.
     Returns the final text response to the user.
@@ -32,7 +37,7 @@ def run(state: AgentState, system_prompt: str | None = None) -> str:
     active_prompt = system_prompt or SYSTEM_PROMPT
     for round_num in range(MAX_TOOL_ROUNDS):
         try:
-            message = call_llm(state.messages, active_prompt)
+            message = call_llm(state.messages, active_prompt, user_id=user_id)
         except LLMResponseError as e:
             logger.error("LLM call failed: %s", e)
             return f"Sorry, something went wrong: {e}"
@@ -66,7 +71,7 @@ def run(state: AgentState, system_prompt: str | None = None) -> str:
             args = json.loads(tool_call.function.arguments)
             logger.info("Tool call: %s(%s)", name, args)
 
-            result = execute_tool(name, args)
+            result = execute_tool(name, args, user_id=user_id)
             logger.info("Tool result: %s", result.to_observation_text())
 
             state.add_tool_result(

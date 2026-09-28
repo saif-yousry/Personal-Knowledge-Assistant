@@ -18,3 +18,8 @@ class ChatPostResponse(BaseModel):
     """Agent reply with the session ID."""
     reply: str
     session_id: str
+
+
+class GroqApiKeyRequest(BaseModel):
+    """A user's Groq API key submitted from the authenticated settings UI."""
+    api_key: str = Field(..., min_length=1, max_length=512)

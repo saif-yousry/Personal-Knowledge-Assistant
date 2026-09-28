@@ -29,7 +29,12 @@ TOOL_REGISTRY: dict[str, ToolFn] = {
 }
 
 
-def execute_tool(name: str, arguments: dict) -> ToolResult:
+def execute_tool(
+    name: str,
+    arguments: dict,
+    *,
+    user_id: int | None = None,
+) -> ToolResult:
 
     """This is the actual 'loop that checks the tool's name' — a dict
     lookup rather than an if/elif chain, so it stays O(1) and doesn't
@@ -44,6 +49,6 @@ def execute_tool(name: str, arguments: dict) -> ToolResult:
             error=f"Unknown tool: '{name}'. Available: {list(TOOL_REGISTRY)}",
         )
     try:
-        return tool_fn(arguments)
+        return tool_fn(arguments, user_id=user_id)
     except Exception as e:  # a broken tool must not crash the whole loop
         return ToolResult(tool_name=name, success=False, error=str(e))

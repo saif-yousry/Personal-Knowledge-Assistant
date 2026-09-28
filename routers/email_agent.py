@@ -12,21 +12,45 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 
+from initializer import db
 from schemas.email_agent import IncomingEmailRequest, ProcessEmailResponse
+from services.app_auth_service import verify_access_token
 from services.email_agent_service import process_incoming_email
 
 logger = logging.getLogger(__name__)
 
 # Reason: Prefix /api/v1/email groups email-automation endpoints under versioned API routes.
 router = APIRouter(prefix="/api/v1/email", tags=["email-agent"])
+optional_oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login",
+    auto_error=False,
+)
 
 
 # Reason: Helper to optionally authenticate a user if an Authorization token is provided,
 # allowing both authenticated users and unauthenticated webhook callbacks to invoke the endpoint.
-async def get_optional_user():
+async def get_optional_user(token: Optional[str] = Depends(optional_oauth2_scheme)):
     """Optional auth dependency allowing webhook access while recognizing logged-in users."""
-    return None
+    if token is None:
+        return None
+
+    try:
+        user_id = verify_access_token(token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+    user = db.find_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+    return user
 
 
 # Reason: Core POST endpoint to receive an incoming email.

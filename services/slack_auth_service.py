@@ -1,0 +1,264 @@
+"""
+slack_auth_service.py
+
+Core service layer for Slack OAuth 2.0 token management.
+
+Responsibilities:
+  - Build the Slack OAuth authorization URL (install link).
+  - Exchange the temporary OAuth code for a permanent bot/user access token.
+  - Persist tokens to the database via the app's Database singleton.
+  - Retrieve stored tokens from the database.
+  - Fall back to environment-variable tokens when no DB record exists.
+"""
+
+from __future__ import annotations
+
+import logging
+import secrets
+from datetime import datetime, timezone
+from typing import Any, Optional
+from urllib.parse import urlencode
+
+import httpx
+
+from config import settings
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Slack app credentials (non-secret values from config)
+# ---------------------------------------------------------------------------
+
+SLACK_OAUTH_URL = "https://slack.com/api/oauth.v2.access"
+SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
+
+# ---------------------------------------------------------------------------
+# Startup check
+# ---------------------------------------------------------------------------
+
+_OAUTH_VARS = {
+    "SLACK_CLIENT_ID": settings.SLACK_CLIENT_ID,
+    "SLACK_CLIENT_SECRET": bool(settings.SLACK_CLIENT_SECRET.get_secret_value()),
+    "SLACK_REDIRECT_URI": settings.SLACK_REDIRECT_URI,
+    "SLACK_BOT_SCOPES": settings.SLACK_BOT_SCOPES,
+}
+
+_missing_oauth = [name for name, val in _OAUTH_VARS.items() if not val]
+if _missing_oauth:
+    logging.warning(
+        "Slack OAuth install flow is unavailable. Missing: %s. "
+        "The service will still work if SLACK_BOT_TOKEN is set in .env.",
+        ", ".join(_missing_oauth),
+    )
+
+# ---------------------------------------------------------------------------
+# In-memory CSRF state store (swap for Redis in prod)
+# ---------------------------------------------------------------------------
+
+_state_store: dict[str, tuple[datetime, int]] = {}  # state -> (issued_at, user_id)
+_STATE_TTL_SECONDS = 300
+
+
+# ---------------------------------------------------------------------------
+# DB helpers — use the app's Database singleton
+# ---------------------------------------------------------------------------
+
+def _get_db():
+    from initializer import db
+    return db
+
+
+def _db_save_token(user_id: int, team_id: str, token_data: dict[str, Any]) -> None:
+    try:
+        db = _get_db()
+        with db.session_context() as session:
+            db.save_slack_credentials(
+                session,
+                user_id,
+                team_id=team_id,
+                access_token=token_data.get("bot_token", ""),
+                refresh_token=token_data.get("refresh_token"),
+                team_name=token_data.get("team_name"),
+                bot_user_id=token_data.get("bot_user_id"),
+                metadata={k: v for k, v in token_data.items() if k not in ("created_at", "updated_at")},
+            )
+        logger.info("Persisted Slack token for team_id=%s to PostgreSQL", team_id)
+    except Exception as exc:
+        logger.error("Failed to persist Slack token for team_id=%s: %s", team_id, exc)
+
+
+def _db_get_token(team_id: str) -> Optional[dict[str, Any]]:
+    try:
+        db = _get_db()
+        with db.session_context() as session:
+            cred = db.find_slack_credentials(session, team_id=team_id)
+            if cred:
+                return {
+                    "team_id": team_id,
+                    "bot_token": cred.access_token,
+                    "team_name": cred.team_name,
+                    "bot_user_id": cred.bot_user_id,
+                }
+    except Exception as exc:
+        logger.error("Failed to retrieve Slack token for team_id=%s: %s", team_id, exc)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Public service functions
+# ---------------------------------------------------------------------------
+
+def generate_install_url(user_id: int) -> tuple[str, str]:
+    """
+    Build the Slack OAuth 2.0 authorisation URL.
+
+    Returns (url, state).
+    """
+    if not settings.SLACK_CLIENT_ID:
+        raise RuntimeError(
+            "SLACK_CLIENT_ID environment variable is not set. "
+            "Check your .env file or environment configuration."
+        )
+
+    state = secrets.token_urlsafe(32)
+    _state_store[state] = (datetime.now(tz=timezone.utc), user_id)
+
+    params: dict[str, str] = {
+        "client_id": settings.SLACK_CLIENT_ID,
+        "scope": settings.SLACK_BOT_SCOPES,
+        "redirect_uri": settings.SLACK_REDIRECT_URI,
+        "state": state,
+    }
+    if settings.SLACK_USER_SCOPES:
+        params["user_scope"] = settings.SLACK_USER_SCOPES
+
+    url = f"{SLACK_AUTHORIZE_URL}?{urlencode(params)}"
+    logger.info("Generated Slack install URL (state=%s...)", state[:8])
+    return url, state
+
+
+def validate_state(state: str) -> Optional[int]:
+    """Verify that state was generated by this server and has not expired.
+
+    Returns the associated user_id on success, or None on failure.
+    """
+    entry = _state_store.pop(state, None)
+    if entry is None:
+        logger.warning("OAuth state validation failed: unknown state token.")
+        return None
+
+    issued_at, user_id = entry
+    age = (datetime.now(tz=timezone.utc) - issued_at).total_seconds()
+    if age > _STATE_TTL_SECONDS:
+        logger.warning("OAuth state validation failed: state expired after %.1f seconds.", age)
+        return None
+
+    return user_id
+
+
+async def exchange_code_for_token(code: str, user_id: int) -> dict[str, Any]:
+    """
+    Exchange the temporary OAuth code for permanent tokens via oauth.v2.access.
+
+    The token bundle is persisted to the database and returned.
+    """
+    client_secret = settings.SLACK_CLIENT_SECRET.get_secret_value()
+    if not settings.SLACK_CLIENT_ID or not client_secret:
+        raise RuntimeError(
+            "SLACK_CLIENT_ID and SLACK_CLIENT_SECRET must both be set in the environment."
+        )
+
+    logger.info("Exchanging OAuth code for Slack access token...")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            SLACK_OAUTH_URL,
+            data={
+                "code": code,
+                "redirect_uri": settings.SLACK_REDIRECT_URI,
+            },
+            auth=(settings.SLACK_CLIENT_ID, client_secret),
+        )
+        response.raise_for_status()
+        payload: dict[str, Any] = response.json()
+
+    if not payload.get("ok"):
+        error_code = payload.get("error", "unknown_error")
+        logger.error("Slack oauth.v2.access returned error: %s", error_code)
+        raise ValueError(f"Slack OAuth exchange failed: {error_code}")
+
+    now = datetime.now(tz=timezone.utc)
+    team_id: str = payload["team"]["id"]
+
+    token_bundle: dict[str, Any] = {
+        "team_id": team_id,
+        "team_name": payload["team"].get("name", ""),
+        "bot_token": payload["access_token"],
+        "bot_user_id": payload.get("bot_user_id", ""),
+        "authed_user_id": payload.get("authed_user", {}).get("id", ""),
+        "user_token": payload.get("authed_user", {}).get("access_token"),
+        "raw_response": payload,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    logger.info(
+        "Token exchange successful - team_id=%s, team_name=%s",
+        team_id,
+        token_bundle["team_name"],
+    )
+
+    _db_save_token(user_id, team_id, token_bundle)
+    return token_bundle
+
+
+def get_bot_token(team_id: Optional[str] = None) -> str:
+    """
+    Retrieve a Slack bot token.
+
+    Lookup order:
+      1. Database record for team_id.
+      2. SLACK_BOT_TOKEN environment variable.
+    """
+    if team_id:
+        record = _db_get_token(team_id)
+        if record and record.get("bot_token"):
+            logger.debug("Bot token retrieved from DB for team_id=%s", team_id)
+            return record["bot_token"]
+
+    env_token = settings.SLACK_BOT_TOKEN.get_secret_value()
+    if env_token:
+        logger.debug("Using SLACK_BOT_TOKEN from settings.")
+        return env_token
+
+    raise RuntimeError(
+        f"No Slack bot token found. "
+        f"Either install the app via /slack/install or set the SLACK_BOT_TOKEN env variable. "
+        f"(team_id={team_id!r})"
+    )
+
+
+def get_user_token(team_id: Optional[str] = None) -> Optional[str]:
+    """Retrieve a Slack user token (xoxp-...) for team_id, if available."""
+    if team_id:
+        record = _db_get_token(team_id)
+        if record and record.get("user_token"):
+            return record["user_token"]
+
+    # SLACK_USER_TOKEN is not in settings — it's only available from DB
+    return None
+
+
+def revoke_token(team_id: str) -> None:
+    """Revoke and delete the stored Slack token for team_id."""
+    try:
+        db = _get_db()
+        with db.session_context() as session:
+            deleted = db.delete_slack_credentials(session, team_id=team_id)
+            if deleted:
+                logger.info("Revoked Slack token for team_id=%s", team_id)
+            else:
+                logger.warning("No Slack token found to revoke for team_id=%s", team_id)
+    except Exception as exc:
+        logger.error("Failed to revoke token for team_id=%s: %s", team_id, exc)
+        raise

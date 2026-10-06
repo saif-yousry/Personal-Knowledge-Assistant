@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ChromaDB / vector store data
+Chroma_db/
+
+# Telethon sessions
+*.session
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Installers
+*.exe
+
+# Claude Code
+CLAUDE.md

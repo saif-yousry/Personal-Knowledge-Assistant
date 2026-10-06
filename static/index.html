@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>Personal Knowledge Assistant</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; }
+        .container { max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        h1 { margin-bottom: 30px; }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card h2 { margin-bottom: 16px; font-size: 1.2em; }
+        .status { padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; display: none; }
+        .status.success { display: block; background: #d4edda; color: #155724; }
+        .status.error { display: block; background: #f8d7da; color: #721c24; }
+        .status.info { display: block; background: #d1ecf1; color: #0c5460; }
+        label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.9em; }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            font-size: 1em;
+        }
+        .gmail-auto-reply-toggle {
+            width: auto;
+            padding: 0;
+            margin: 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            color: #fff;
+        }
+        .btn-primary { background: #4285f4; }
+        .btn-primary:hover { background: #3367d6; }
+        .btn-green { background: #34a853; }
+        .btn-green:hover { background: #2d9249; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .results { margin-top: 16px; }
+        .result-item {
+            padding: 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            background: #fff;
+            border-left: 4px solid #4285f4;
+        }
+        .result-item.pdf { border-left-color: #ea4335; }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        .result-subject {
+            font-weight: 700;
+            font-size: 1.05em;
+            color: #1a1a1a;
+        }
+        .result-badge {
+            font-size: 0.75em;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+        .badge-email { background: #e8f0fe; color: #1967d2; }
+        .badge-pdf { background: #fce8e6; color: #c5221f; }
+        .badge-slack { background: #e8f5e9; color: #4a154b; }
+        .result-item.slack { border-left-color: #4a154b; }
+        .btn-slack { background: #4285f4; }
+        .btn-slack:hover { background: #3367d6; }
+        .badge-discord { background: #e8eaf6; color: #5865f2; }
+        .result-item.discord { border-left-color: #5865f2; }
+        .btn-discord { background: #4285f4; }
+        .btn-discord:hover { background: #3367d6; }
+        .badge-telegram { background: #e3f2fd; color: #0088cc; }
+        .result-item.telegram { border-left-color: #0088cc; }
+        .btn-telegram { background: #0088cc; }
+        .btn-telegram:hover { background: #006daa; }
+        .result-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 10px;
+            font-size: 0.85em;
+            color: #666;
+        }
+        .result-meta span { display: flex; align-items: center; gap: 4px; }
+        .result-text {
+            font-size: 0.92em;
+            color: #444;
+            line-height: 1.6;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .result-chunk-info {
+            margin-top: 8px;
+            font-size: 0.8em;
+            color: #999;
+        }
+        .chat-messages {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: #fafafa;
+        }
+        .chat-msg {
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .chat-msg.user {
+            text-align: right;
+        }
+        .chat-msg .bubble {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 16px;
+            max-width: 80%;
+            text-align: left;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .chat-msg.user .bubble {
+            background: #4285f4;
+            color: #fff;
+        }
+        .chat-msg.assistant .bubble {
+            background: #e8e8e8;
+            color: #333;
+        }
+        .chat-input-row {
+            display: flex;
+            gap: 8px;
+        }
+        .chat-input-row input {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .chat-input-row button {
+            flex-shrink: 0;
+        }
+        .btn-chat { background: #673ab7; }
+        .btn-chat:hover { background: #5e35b1; }
+        .btn-reset { background: #757575; font-size: 0.85em; padding: 6px 14px; }
+        .btn-reset:hover { background: #616161; }
+        .btn-logout { background: #ea4335; font-size: 0.85em; padding: 6px 14px; }
+        .btn-logout:hover { background: #d33426; }
+        .auth-toggle { font-size: 0.9em; margin-top: 12px; color: #555; }
+        .auth-toggle a { color: #4285f4; cursor: pointer; text-decoration: underline; }
+        .user-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .user-bar span { font-weight: 600; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Personal Knowledge Assistant</h1>
+
+        <!-- Auth: Register -->
+        <div id="auth-section">
+            <div class="card" id="register-card">
+                <h2>Register</h2>
+                <div id="register-status" class="status"></div>
+                <label for="reg-name">Name</label>
+                <input type="text" id="reg-name" placeholder="Your name">
+                <label for="reg-email">Email</label>
+                <input type="email" id="reg-email" placeholder="your@email.com">
+                <label for="reg-password">Password</label>
+                <input type="password" id="reg-password" placeholder="Min 8 characters">
+                <button class="btn-green" onclick="registerUser()">Register</button>
+                <div class="auth-toggle">Already have an account? <a onclick="showLogin()">Login</a></div>
+            </div>
+
+            <div class="card hidden" id="login-card">
+                <h2>Login</h2>
+                <div id="login-status" class="status"></div>
+                <label for="login-email">Email</label>
+                <input type="email" id="login-email" placeholder="your@email.com">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" placeholder="Password" onkeydown="if(event.key==='Enter')loginUser()">
+                <button class="btn-primary" onclick="loginUser()">Login</button>
+                <div class="auth-toggle">Don't have an account? <a onclick="showRegister()">Register</a></div>
+            </div>
+        </div>
+
+        <!-- Logged-in content (hidden until login) -->
+        <div id="app-section" class="hidden">
+
+        <!-- User bar -->
+        <div class="user-bar">
+            <span id="user-greeting">Welcome</span>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+
+        <!-- Health Check -->
+        <div class="card">
+            <h2>Server Status</h2>
+            <div id="health-status" class="status"></div>
+            <button class="btn-primary" onclick="checkHealth()">Check Server</button>
+        </div>
+
+        <!-- Gmail -->
+        <div class="card">
+            <h2>Gmail</h2>
+            <div id="google-status" class="status"></div>
+            <button class="btn-primary" id="google-btn" onclick="connectGoogle()" style="margin-bottom: 16px;">Connect Google Account</button>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <input class="gmail-auto-reply-toggle" type="checkbox" id="gmail-autoresponder-enabled" onchange="updateAutoResponderSetting()" disabled>
+                Enable Gmail auto-replies
+            </label>
+            <div id="gmail-autoresponder-status" class="status"></div>
+            <div id="ingest-status" class="status"></div>
+            <label for="ingest-label">Gmail Label</label>
+            <input type="text" id="ingest-label" value="INBOX" placeholder="INBOX">
+            <button class="btn-green" id="ingest-btn" onclick="ingestEmails()">Start Ingestion</button>
+            <p style="margin-top: 12px; color: #666;">
+                Auto-replies are off by default. Historical mail is indexed silently; new mail is only indexed after you or the assistant replies.
+            </p>
+        </div>
+
+        <!-- Slack -->
+        <div class="card">
+            <h2>Slack</h2>
+            <div id="slack-status" class="status"></div>
+            <button class="btn-slack" id="slack-connect-btn" onclick="connectSlack()" style="margin-bottom: 16px;">Connect Slack Workspace</button>
+            <button class="btn-primary" onclick="checkSlackHealth()" style="margin-bottom: 16px; margin-left: 8px;">Check Status</button>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="slack-channels-status" class="status"></div>
+            <button class="btn-primary" onclick="discoverChannels()" style="margin-bottom: 16px;">Discover Channels</button>
+            <div id="slack-channels-list" class="results"></div>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="slack-ingest-status" class="status"></div>
+            <label for="slack-team-id">Team ID (optional)</label>
+            <input type="text" id="slack-team-id" placeholder="e.g. T01234567">
+            <label for="slack-channel-id">Channel ID (optional — empty for all)</label>
+            <input type="text" id="slack-channel-id" placeholder="e.g. C01234567">
+            <label for="slack-limit">Max Messages Per Channel</label>
+            <input type="number" id="slack-limit" value="50" min="1" max="200">
+            <button class="btn-green" id="slack-ingest-btn" onclick="ingestSlack()">Start Slack Ingestion</button>
+        </div>
+
+        <!-- Discord -->
+        <div class="card">
+            <h2>Discord</h2>
+            <div id="discord-status" class="status"></div>
+            <button class="btn-discord" id="discord-connect-btn" onclick="connectDiscord()" style="margin-bottom: 16px;">Connect Discord Server</button>
+            <button class="btn-primary" onclick="checkDiscordHealth()" style="margin-bottom: 16px; margin-left: 8px;">Check Status</button>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="discord-guilds-status" class="status"></div>
+            <button class="btn-primary" onclick="discoverGuilds()" style="margin-bottom: 16px;">Discover Guilds</button>
+            <div id="discord-guilds-list" class="results"></div>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="discord-channels-status" class="status"></div>
+            <label for="discord-guild-id">Guild ID</label>
+            <input type="text" id="discord-guild-id" placeholder="e.g. 123456789012345678">
+            <button class="btn-primary" onclick="discoverDiscordChannels()" style="margin-bottom: 16px;">Discover Channels</button>
+            <div id="discord-channels-list" class="results"></div>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="discord-ingest-status" class="status"></div>
+            <label for="discord-limit">Max Messages Per Channel</label>
+            <input type="number" id="discord-limit" value="50" min="1" max="500">
+            <button class="btn-green" id="discord-ingest-btn" onclick="ingestDiscord()">Start Discord Ingestion</button>
+        </div>
+
+        <!-- Telegram -->
+        <div class="card">
+            <h2>Telegram</h2>
+            <div id="telegram-status" class="status"></div>
+            <button class="btn-primary" onclick="checkTelegramHealth()" style="margin-bottom: 16px;">Check Status</button>
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+
+            <div id="telegram-auth-status" class="status"></div>
+            <label for="telegram-phone">Phone Number</label>
+            <input type="text" id="telegram-phone" placeholder="+15551234567">
+            <button class="btn-telegram" id="telegram-send-code-btn" onclick="telegramSendCode()" style="margin-bottom: 16px;">Send Code</button>
+
+            <div id="telegram-verify-section" style="display: none;">
+                <label for="telegram-code">Verification Code</label>
+                <input type="text" id="telegram-code" placeholder="Enter the code from Telegram">
+                <label for="telegram-2fa">2FA Password (if enabled)</label>
+                <input type="password" id="telegram-2fa" placeholder="Optional">
+                <button class="btn-telegram" id="telegram-verify-btn" onclick="telegramVerify()" style="margin-bottom: 16px;">Verify</button>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="telegram-chats-status" class="status"></div>
+            <button class="btn-primary" onclick="listTelegramChats()" style="margin-bottom: 16px;">List Chats</button>
+            <div id="telegram-chats-list" class="results"></div>
+
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+            <div id="telegram-ingest-status" class="status"></div>
+            <label for="telegram-chat-id">Chat ID (optional — empty for all)</label>
+            <input type="text" id="telegram-chat-id" placeholder="e.g. -1001234567890">
+            <label for="telegram-limit">Max Messages Per Chat</label>
+            <input type="number" id="telegram-limit" value="50" min="1" max="500">
+            <button class="btn-green" id="telegram-ingest-btn" onclick="ingestTelegram()">Start Telegram Ingestion</button>
+        </div>
+
+        <!-- PDF Ingest -->
+        <div class="card">
+            <h2>Ingest PDFs</h2>
+            <div id="pdf-status" class="status"></div>
+            <label for="pdf-files">Select PDF files</label>
+            <input type="file" id="pdf-files" accept=".pdf" multiple style="margin-bottom: 12px;">
+            <button class="btn-green" id="pdf-btn" onclick="ingestPdfs()">Upload & Ingest</button>
+        </div>
+
+        <!-- Chat -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="margin-bottom: 0;">Chat with Agent</h2>
+                <button class="btn-reset" onclick="resetChat()">Reset</button>
+            </div>
+            <div id="chat-messages" class="chat-messages"></div>
+            <div class="chat-input-row">
+                <input type="text" id="chat-input" placeholder="Ask the assistant anything..." onkeydown="if(event.key==='Enter')sendChat()">
+                <button class="btn-chat" id="chat-btn" onclick="sendChat()">Send</button>
+            </div>
+        </div>
+
+
+        </div><!-- end app-section -->
+    </div>
+
+    <script>
+        function handleUnauthorized(res) {
+            if (res.status === 401) {
+                alert('Session expired. Please login again.');
+                logout();
+                return true;
+            }
+            return false;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const d = new Date(dateStr);
+                return d.toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch { return dateStr; }
+        }
+
+
+        async function checkHealth() {
+            const el = document.getElementById('health-status');
+            try {
+                const res = await fetch('/api/v1/');
+                const data = await res.text();
+                el.className = 'status success';
+                el.textContent = 'Server is running.';
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Server is not reachable.';
+            }
+        }
+
+        async function ingestEmails() {
+            const el = document.getElementById('ingest-status');
+            const btn = document.getElementById('ingest-btn');
+            const label = document.getElementById('ingest-label').value.trim();
+
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Starting ingestion...';
+
+            try {
+                const params = new URLSearchParams({ label });
+                const res = await fetch('/api/v1/ingest?' + params, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status info';
+                    el.textContent = 'Ingestion started! Fetching emails...';
+                    pollIngestStatus(el, btn);
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Ingestion failed.';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        async function startAutoRepliesNow() {
+            const el = document.getElementById('ingest-status');
+            const btn = document.getElementById('auto-reply-now-btn');
+            const label = document.getElementById('ingest-label').value.trim() || 'INBOX';
+
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Starting auto-replies from now...';
+
+            try {
+                // (auto responder added part by saif) The API checkpoints Gmail now and deliberately skips older messages.
+                const params = new URLSearchParams({ label });
+                const res = await fetch('/api/v1/email/auto-reply/start?' + params, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = `Auto-replies are active for ${data.label}. Emails received before activation will not be replied to.`;
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Could not start auto-replies.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function pollIngestStatus(el, btn) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/v1/ingest/status', {
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                    });
+                    if (handleUnauthorized(res)) { clearInterval(interval); return; }
+                    const data = await res.json();
+
+                    if (data.state === 'fetching') {
+                        el.className = 'status info';
+                        el.textContent = 'Fetching emails from Gmail...';
+                    } else if (data.state === 'processing') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} emails. Processing and embedding...`;
+                    } else if (data.state === 'backfilling') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} historical emails so far. Backfill continues; new-email replies remain disabled until it completes.`;
+                    } else if (data.state === 'ready' || data.state === 'done') {
+                        clearInterval(interval);
+                        el.className = 'status success';
+                        el.textContent = data.mode === 'auto_reply_from_now'
+                            ? 'Auto-replies are active from now; historical ingestion was skipped.'
+                            : `Historical ingestion complete! ${data.fetched} emails fetched, ${data.chunks_stored} chunks stored. Auto-replies are active.`;
+                        btn.disabled = false;
+                    } else if (data.state === 'error') {
+                        clearInterval(interval);
+                        el.className = 'status error';
+                        el.textContent = `Ingestion failed: ${data.error}`;
+                        btn.disabled = false;
+                    }
+                } catch {
+                    clearInterval(interval);
+                    el.className = 'status error';
+                    el.textContent = 'Lost connection to server.';
+                    btn.disabled = false;
+                }
+            }, 2000);
+        }
+
+
+        async function ingestPdfs() {
+            const el = document.getElementById('pdf-status');
+            const btn = document.getElementById('pdf-btn');
+            const fileInput = document.getElementById('pdf-files');
+            const files = fileInput.files;
+
+            if (!files || files.length === 0) {
+                el.className = 'status error';
+                el.textContent = 'Please select at least one PDF file.';
+                return;
+            }
+
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Uploading PDFs...';
+
+            try {
+                const formData = new FormData();
+                for (const file of files) {
+                    formData.append('files', file);
+                }
+
+                const res = await fetch('/api/v1/ingest/pdf', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                    body: formData,
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = `Ingestion started for ${data.files.length} PDF(s): ${data.files.join(', ')}`;
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'PDF ingestion failed.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        let currentSessionId = null;
+
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const messagesEl = document.getElementById('chat-messages');
+            const btn = document.getElementById('chat-btn');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Show user message
+            messagesEl.innerHTML += `<div class="chat-msg user"><span class="bubble">${escapeHtml(message)}</span></div>`;
+            input.value = '';
+            btn.disabled = true;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+
+            try {
+                const res = await fetch('/api/v1/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ message, session_id: currentSessionId }),
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    currentSessionId = data.session_id;
+                    messagesEl.innerHTML += `<div class="chat-msg assistant"><span class="bubble">${escapeHtml(data.reply)}</span></div>`;
+                } else {
+                    messagesEl.innerHTML += `<div class="chat-msg assistant"><span class="bubble" style="background:#f8d7da;color:#721c24;">${escapeHtml(data.detail || 'Error')}</span></div>`;
+                }
+            } catch (e) {
+                messagesEl.innerHTML += `<div class="chat-msg assistant"><span class="bubble" style="background:#f8d7da;color:#721c24;">Connection error: ${escapeHtml(e.message)}</span></div>`;
+            } finally {
+                btn.disabled = false;
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+                input.focus();
+            }
+        }
+
+        async function resetChat() {
+            const messagesEl = document.getElementById('chat-messages');
+            try {
+                if (currentSessionId) {
+                    await fetch('/api/v1/chat/reset?' + new URLSearchParams({ session_id: currentSessionId }), {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                    });
+                }
+            } catch {}
+            currentSessionId = null;
+            messagesEl.innerHTML = '';
+        }
+
+        // --- Slack ---
+        async function connectSlack() {
+            try {
+                const res = await fetch('/slack/install', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (data.install_url) {
+                    window.location.href = data.install_url;
+                } else {
+                    alert('Failed to get Slack install URL.');
+                }
+            } catch (e) {
+                alert('Could not start Slack OAuth flow.');
+            }
+        }
+
+        async function checkSlackHealth() {
+            const el = document.getElementById('slack-status');
+            try {
+                const res = await fetch('/slack/health');
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    el.className = 'status success';
+                    el.textContent = 'Slack auth is configured.';
+                } else {
+                    el.className = 'status error';
+                    el.textContent = 'Issues: ' + (data.issues || []).join(', ');
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Could not reach Slack health endpoint.';
+            }
+        }
+
+        async function discoverChannels() {
+            const el = document.getElementById('slack-channels-status');
+            const listEl = document.getElementById('slack-channels-list');
+            const teamId = document.getElementById('slack-team-id').value.trim();
+
+            el.className = 'status info';
+            el.textContent = 'Discovering channels...';
+            listEl.innerHTML = '';
+
+            try {
+                const params = new URLSearchParams();
+                if (teamId) params.append('team_id', teamId);
+                const res = await fetch('/api/v1/slack/channels?' + params, {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+
+                if (res.ok && data.channels) {
+                    el.className = 'status success';
+                    el.textContent = `Found ${data.channels_count} channels.`;
+                    listEl.innerHTML = data.channels.map(ch =>
+                        `<div style="padding:6px 12px;margin-bottom:4px;background:#f8f9fa;border-radius:4px;font-size:0.9em;">
+                            <strong>#${escapeHtml(ch.name)}</strong>
+                            <span style="color:#999;margin-left:8px;">${escapeHtml(ch.id)}</span>
+                        </div>`
+                    ).join('');
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Failed to list channels.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            }
+        }
+
+        async function ingestSlack() {
+            const el = document.getElementById('slack-ingest-status');
+            const btn = document.getElementById('slack-ingest-btn');
+            const teamId = document.getElementById('slack-team-id').value.trim();
+            const channelId = document.getElementById('slack-channel-id').value.trim();
+            const limit = document.getElementById('slack-limit').value;
+
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Starting Slack ingestion...';
+
+            try {
+                const params = new URLSearchParams({ limit_per_channel: limit, save_to_db: 'true' });
+                if (teamId) params.append('team_id', teamId);
+                if (channelId) params.append('channel_id', channelId);
+
+                const res = await fetch('/api/v1/ingest/slack?' + params, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status info';
+                    el.textContent = 'Ingestion started! Fetching Slack messages...';
+                    pollSlackIngestStatus(el, btn, teamId);
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Slack ingestion failed.';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        function pollSlackIngestStatus(el, btn, teamId) {
+            const interval = setInterval(async () => {
+                try {
+                    const params = new URLSearchParams();
+                    if (teamId) params.append('team_id', teamId);
+                    const res = await fetch('/api/v1/ingest/slack/status?' + params, {
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                    });
+                    const data = await res.json();
+
+                    if (data.state === 'fetching') {
+                        el.className = 'status info';
+                        el.textContent = 'Fetching messages from Slack...';
+                    } else if (data.state === 'cleaning') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Cleaning and deduplicating...`;
+                    } else if (data.state === 'processing') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Chunking and embedding...`;
+                    } else if (data.state === 'done') {
+                        clearInterval(interval);
+                        el.className = 'status success';
+                        el.textContent = `Done! ${data.fetched} messages fetched, ${data.chunks_stored} chunks stored.`;
+                        btn.disabled = false;
+                    } else if (data.state === 'error') {
+                        clearInterval(interval);
+                        el.className = 'status error';
+                        el.textContent = `Ingestion failed: ${data.error}`;
+                        btn.disabled = false;
+                    }
+                } catch {
+                    clearInterval(interval);
+                    el.className = 'status error';
+                    el.textContent = 'Lost connection to server.';
+                    btn.disabled = false;
+                }
+            }, 2000);
+        }
+
+        // --- Discord ---
+        async function connectDiscord() {
+            try {
+                const res = await fetch('/discord/authorize', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (data.authorization_url) {
+                    window.location.href = data.authorization_url;
+                } else {
+                    alert('Failed to get Discord authorization URL.');
+                }
+            } catch (e) {
+                alert('Could not start Discord OAuth flow.');
+            }
+        }
+
+        async function checkDiscordHealth() {
+            const el = document.getElementById('discord-status');
+            try {
+                const res = await fetch('/discord/health');
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    el.className = 'status success';
+                    el.textContent = 'Discord auth is configured.';
+                } else {
+                    el.className = 'status error';
+                    el.textContent = 'Issues: ' + (data.issues || []).join(', ');
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Could not reach Discord health endpoint.';
+            }
+        }
+
+        async function discoverGuilds() {
+            const el = document.getElementById('discord-guilds-status');
+            const listEl = document.getElementById('discord-guilds-list');
+
+            el.className = 'status info';
+            el.textContent = 'Discovering guilds...';
+            listEl.innerHTML = '';
+
+            try {
+                const res = await fetch('/api/v1/discord/guilds', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+
+                if (res.ok && data.guilds) {
+                    el.className = 'status success';
+                    el.textContent = `Found ${data.guilds_count} guild(s).`;
+                    listEl.innerHTML = data.guilds.map(g =>
+                        `<div style="padding:6px 12px;margin-bottom:4px;background:#f8f9fa;border-radius:4px;font-size:0.9em;">
+                            <strong>${escapeHtml(g.guild_name)}</strong>
+                            <span style="color:#999;margin-left:8px;">${escapeHtml(g.guild_id)}</span>
+                        </div>`
+                    ).join('');
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Failed to list guilds.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            }
+        }
+
+        async function discoverDiscordChannels() {
+            const el = document.getElementById('discord-channels-status');
+            const listEl = document.getElementById('discord-channels-list');
+            const guildId = document.getElementById('discord-guild-id').value.trim();
+
+            if (!guildId) {
+                el.className = 'status error';
+                el.textContent = 'Please enter a Guild ID.';
+                return;
+            }
+
+            el.className = 'status info';
+            el.textContent = 'Discovering channels...';
+            listEl.innerHTML = '';
+
+            try {
+                const params = new URLSearchParams({ guild_id: guildId });
+                const res = await fetch('/api/v1/discord/channels?' + params, {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+
+                if (res.ok && data.channels) {
+                    el.className = 'status success';
+                    el.textContent = `Found ${data.channels_count} text channel(s).`;
+                    listEl.innerHTML = data.channels.map(ch =>
+                        `<div style="padding:6px 12px;margin-bottom:4px;background:#f8f9fa;border-radius:4px;font-size:0.9em;">
+                            <strong>#${escapeHtml(ch.channel_name)}</strong>
+                            <span style="color:#999;margin-left:8px;">${escapeHtml(ch.channel_id)}</span>
+                        </div>`
+                    ).join('');
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Failed to list channels.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            }
+        }
+
+        async function ingestDiscord() {
+            const el = document.getElementById('discord-ingest-status');
+            const btn = document.getElementById('discord-ingest-btn');
+            const guildId = document.getElementById('discord-guild-id').value.trim();
+            const limit = document.getElementById('discord-limit').value;
+
+            if (!guildId) {
+                el.className = 'status error';
+                el.textContent = 'Please enter a Guild ID.';
+                return;
+            }
+
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Starting Discord ingestion...';
+
+            try {
+                const params = new URLSearchParams({ guild_id: guildId, max_per_channel: limit, save_to_db: 'true' });
+                const res = await fetch('/api/v1/ingest/discord?' + params, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status info';
+                    el.textContent = 'Ingestion started! Fetching Discord messages...';
+                    pollDiscordIngestStatus(el, btn, guildId);
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Discord ingestion failed.';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        function pollDiscordIngestStatus(el, btn, guildId) {
+            const interval = setInterval(async () => {
+                try {
+                    const params = new URLSearchParams({ guild_id: guildId });
+                    const res = await fetch('/api/v1/ingest/discord/status?' + params, {
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                    });
+                    const data = await res.json();
+
+                    if (data.state === 'fetching') {
+                        el.className = 'status info';
+                        el.textContent = 'Fetching messages from Discord...';
+                    } else if (data.state === 'cleaning') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Cleaning...`;
+                    } else if (data.state === 'processing') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Chunking and embedding...`;
+                    } else if (data.state === 'done') {
+                        clearInterval(interval);
+                        el.className = 'status success';
+                        el.textContent = `Done! ${data.fetched} messages fetched, ${data.chunks_stored} chunks stored.`;
+                        btn.disabled = false;
+                    } else if (data.state === 'error') {
+                        clearInterval(interval);
+                        el.className = 'status error';
+                        el.textContent = `Ingestion failed: ${data.error}`;
+                        btn.disabled = false;
+                    }
+                } catch {
+                    clearInterval(interval);
+                    el.className = 'status error';
+                    el.textContent = 'Lost connection to server.';
+                    btn.disabled = false;
+                }
+            }, 2000);
+        }
+
+        // --- Telegram ---
+        async function checkTelegramHealth() {
+            const el = document.getElementById('telegram-status');
+            try {
+                const res = await fetch('/telegram/health');
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    el.className = 'status success';
+                    el.textContent = 'Telegram auth is configured.';
+                } else {
+                    el.className = 'status error';
+                    el.textContent = 'Issues: ' + (data.issues || []).join(', ');
+                }
+            } catch {
+                el.className = 'status error';
+                el.textContent = 'Could not reach Telegram health endpoint.';
+            }
+        }
+
+        async function telegramSendCode() {
+            const el = document.getElementById('telegram-auth-status');
+            const phone = document.getElementById('telegram-phone').value.trim();
+            if (!phone) { el.className = 'status error'; el.textContent = 'Enter a phone number.'; return; }
+            el.className = 'status info'; el.textContent = 'Sending code...';
+            try {
+                const res = await fetch('/telegram/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number: phone })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = 'Code sent! Check your Telegram app.';
+                    document.getElementById('telegram-verify-section').style.display = 'block';
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Failed to send code.';
+                }
+            } catch {
+                el.className = 'status error';
+                el.textContent = 'Network error.';
+            }
+        }
+
+        async function telegramVerify() {
+            const el = document.getElementById('telegram-auth-status');
+            const phone = document.getElementById('telegram-phone').value.trim();
+            const code = document.getElementById('telegram-code').value.trim();
+            const password = document.getElementById('telegram-2fa').value;
+            if (!phone || !code) { el.className = 'status error'; el.textContent = 'Phone and code are required.'; return; }
+            el.className = 'status info'; el.textContent = 'Verifying...';
+            try {
+                const body = { phone_number: phone, code: code };
+                if (password) body.password = password;
+                const res = await fetch('/telegram/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = `Authenticated! Telegram user ID: ${data.telegram_user_id}`;
+                    document.getElementById('telegram-verify-section').style.display = 'none';
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Verification failed.';
+                }
+            } catch {
+                el.className = 'status error';
+                el.textContent = 'Network error.';
+            }
+        }
+
+        async function listTelegramChats() {
+            const el = document.getElementById('telegram-chats-status');
+            const listEl = document.getElementById('telegram-chats-list');
+            const phone = document.getElementById('telegram-phone').value.trim();
+            if (!phone) { el.className = 'status error'; el.textContent = 'Enter a phone number first.'; return; }
+            el.className = 'status info'; el.textContent = 'Fetching chats...';
+            listEl.innerHTML = '';
+            try {
+                const params = new URLSearchParams({ phone_number: phone });
+                const res = await fetch('/api/v1/telegram/chats?' + params, {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = `Found ${data.chats_count} chats.`;
+                    listEl.innerHTML = data.chats.map(c =>
+                        `<div class="result-item telegram"><strong>${escapeHtml(c.name)}</strong> <small>(${c.type}, id: ${c.id}, unread: ${c.unread_count})</small></div>`
+                    ).join('');
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Failed to list chats.';
+                }
+            } catch {
+                el.className = 'status error';
+                el.textContent = 'Network error.';
+            }
+        }
+
+        async function ingestTelegram() {
+            const el = document.getElementById('telegram-ingest-status');
+            const btn = document.getElementById('telegram-ingest-btn');
+            const phone = document.getElementById('telegram-phone').value.trim();
+            const chatId = document.getElementById('telegram-chat-id').value.trim();
+            const limit = document.getElementById('telegram-limit').value;
+            if (!phone) { el.className = 'status error'; el.textContent = 'Enter a phone number first.'; return; }
+            btn.disabled = true;
+            el.className = 'status info';
+            el.textContent = 'Starting Telegram ingestion...';
+            try {
+                const params = new URLSearchParams({ phone_number: phone, limit_per_chat: limit });
+                if (chatId) params.set('chat_id', chatId);
+                const res = await fetch('/api/v1/ingest/telegram?' + params, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    el.className = 'status info';
+                    el.textContent = 'Ingestion started! Fetching Telegram messages...';
+                    pollTelegramIngestStatus(el, btn, phone);
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Telegram ingestion failed.';
+                    btn.disabled = false;
+                }
+            } catch {
+                el.className = 'status error';
+                el.textContent = 'Network error.';
+                btn.disabled = false;
+            }
+        }
+
+        function pollTelegramIngestStatus(el, btn, phone) {
+            const interval = setInterval(async () => {
+                try {
+                    const params = new URLSearchParams({ phone_number: phone });
+                    const res = await fetch('/api/v1/ingest/telegram/status?' + params, {
+                        headers: { 'Authorization': 'Bearer ' + authToken },
+                    });
+                    const data = await res.json();
+                    if (data.state === 'fetching') {
+                        el.className = 'status info';
+                        el.textContent = 'Fetching messages from Telegram...';
+                    } else if (data.state === 'cleaning') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Cleaning...`;
+                    } else if (data.state === 'processing') {
+                        el.className = 'status info';
+                        el.textContent = `Fetched ${data.fetched} messages. Chunking and embedding...`;
+                    } else if (data.state === 'done') {
+                        clearInterval(interval);
+                        el.className = 'status success';
+                        el.textContent = `Done! ${data.fetched} messages fetched, ${data.chunks_stored} chunks stored.`;
+                        btn.disabled = false;
+                    } else if (data.state === 'error') {
+                        clearInterval(interval);
+                        el.className = 'status error';
+                        el.textContent = `Ingestion failed: ${data.error}`;
+                        btn.disabled = false;
+                    }
+                } catch {
+                    clearInterval(interval);
+                    el.className = 'status error';
+                    el.textContent = 'Lost connection to server.';
+                    btn.disabled = false;
+                }
+            }, 2000);
+        }
+
+        // --- Auth ---
+        let authToken = localStorage.getItem('token');
+        let userEmail = localStorage.getItem('userEmail');
+
+        function showLogin() {
+            document.getElementById('register-card').classList.add('hidden');
+            document.getElementById('login-card').classList.remove('hidden');
+        }
+
+        function showRegister() {
+            document.getElementById('login-card').classList.add('hidden');
+            document.getElementById('register-card').classList.remove('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('app-section').classList.remove('hidden');
+            document.getElementById('user-greeting').textContent = 'Welcome, ' + (userEmail || '');
+            checkHealth();
+            checkGoogleStatus();
+        }
+
+        function logout() {
+            if (authToken) {
+                fetch('/api/v1/auth/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                }).catch(() => {});
+            }
+            authToken = null;
+            userEmail = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('userEmail');
+            document.getElementById('app-section').classList.add('hidden');
+            document.getElementById('auth-section').classList.remove('hidden');
+            showLogin();
+        }
+
+        async function registerUser() {
+            const el = document.getElementById('register-status');
+            const name = document.getElementById('reg-name').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+
+            if (!name || !email || !password) {
+                el.className = 'status error';
+                el.textContent = 'Please fill in all fields.';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/v1/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password }),
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    el.className = 'status success';
+                    el.textContent = 'Registration successful! Please login.';
+                    setTimeout(showLogin, 1000);
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Registration failed.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            }
+        }
+
+        async function loginUser() {
+            const el = document.getElementById('login-status');
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            if (!email || !password) {
+                el.className = 'status error';
+                el.textContent = 'Please fill in all fields.';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    authToken = data.access_token;
+                    userEmail = email;
+                    localStorage.setItem('token', authToken);
+                    localStorage.setItem('userEmail', userEmail);
+                    showApp();
+                } else {
+                    el.className = 'status error';
+                    el.textContent = data.detail || 'Login failed.';
+                }
+            } catch (e) {
+                el.className = 'status error';
+                el.textContent = 'Request failed: ' + e.message;
+            }
+        }
+
+        async function connectGoogle() {
+            if (!authToken) {
+                alert('Please login first.');
+                return;
+            }
+            try {
+                const res = await fetch('/auth/google/login', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (data.authorization_url) {
+                    window.location.href = data.authorization_url;
+                } else {
+                    alert('Failed to get Google authorization URL.');
+                }
+            } catch (e) {
+                alert('Could not start Google OAuth flow.');
+            }
+        }
+
+        async function checkGoogleStatus() {
+            const el = document.getElementById('google-status');
+            const btn = document.getElementById('google-btn');
+            try {
+                const res = await fetch('/auth/google/status', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (googleError) {
+                    el.className = 'status error';
+                    el.textContent = googleError;
+                } else if (data.connected) {
+                    el.className = 'status success';
+                    el.textContent = 'Connected';
+                    btn.textContent = 'Reconnect Google Account';
+                    await loadAutoResponderSetting();
+                } else {
+                    el.className = 'status info';
+                    el.textContent = 'Not connected. Connect your Google account to ingest emails.';
+                    document.getElementById('gmail-autoresponder-enabled').disabled = true;
+                }
+            } catch {}
+        }
+
+        async function loadAutoResponderSetting() {
+            const toggle = document.getElementById('gmail-autoresponder-enabled');
+            const status = document.getElementById('gmail-autoresponder-status');
+            try {
+                const res = await fetch('/api/v1/email/auto-reply/settings', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not load auto-reply setting.');
+                toggle.checked = data.enabled;
+                toggle.disabled = false;
+                status.className = 'status info';
+                status.textContent = data.enabled
+                    ? 'Automatic replies are enabled.'
+                    : 'Automatic replies are disabled.';
+            } catch (e) {
+                toggle.disabled = true;
+                status.className = 'status error';
+                status.textContent = e.message;
+            }
+        }
+
+        async function updateAutoResponderSetting() {
+            const toggle = document.getElementById('gmail-autoresponder-enabled');
+            const status = document.getElementById('gmail-autoresponder-status');
+            const requestedValue = toggle.checked;
+            toggle.disabled = true;
+            try {
+                const res = await fetch('/api/v1/email/auto-reply/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authToken,
+                    },
+                    body: JSON.stringify({ enabled: requestedValue }),
+                });
+                if (handleUnauthorized(res)) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not update auto-reply setting.');
+                toggle.checked = data.enabled;
+                status.className = 'status success';
+                status.textContent = data.enabled
+                    ? 'Automatic replies enabled.'
+                    : 'Automatic replies disabled.';
+            } catch (e) {
+                toggle.checked = !requestedValue;
+                status.className = 'status error';
+                status.textContent = e.message;
+            } finally {
+                toggle.disabled = false;
+            }
+        }
+
+        // Auto-login if token exists
+        if (authToken) {
+            showApp();
+        }
+
+        // Check for Google callback redirect
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('google') === 'connected') {
+            history.replaceState(null, '', '/');
+        }
+        const googleError = params.get('google_error');
+        if (googleError) {
+            history.replaceState(null, '', '/');
+        }
+        const slackTeamId = params.get('slack_team_id');
+        if (slackTeamId) {
+            document.getElementById('slack-team-id').value = slackTeamId;
+            const el = document.getElementById('slack-status');
+            el.className = 'status success';
+            el.textContent = `Slack workspace connected (team: ${slackTeamId})`;
+            history.replaceState(null, '', '/');
+        }
+    </script>
+</body>
+</html>

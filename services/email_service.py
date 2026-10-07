@@ -1,18 +1,15 @@
 """
 services/email_service.py
 
-Reason: Provides email delivery logic (supporting Gmail API via user OAuth tokens,
-standard SMTP servers).
-This abstraction decouples email delivery protocols from the agent tool while tracking
+Reason: Provides email delivery through Gmail API using the user's OAuth tokens.
+This abstraction decouples Gmail API delivery from the agent tool while tracking
 sent emails for downstream verification and RAG vector store persistence.
 """
 
 from __future__ import annotations
 
 import base64
-import email.message
 import logging
-import smtplib
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -51,9 +48,7 @@ class EmailDeliveryError(Exception):
 # Reason: Centralized service to manage email dispatching and sent-message tracking.
 class EmailService:
     """
-    Handles sending emails across multiple backends:
-      1. Gmail API (when Google OAuth credentials exist for the user)
-      2. SMTP (when SMTP server host is configured in settings)
+    Sends messages only through the authenticated user's Gmail API connection.
     """
 
     def __init__(self) -> None:
@@ -61,13 +56,12 @@ class EmailService:
         # whether an email was sent successfully and retrieve exact parameters.
         self._sent_emails: list[dict[str, Any]] = []
 
-    # Reason: Core dispatch method to send an email, choosing the best available transport.
+    # Reason: Core dispatch method for sending through the linked Gmail account.
     def send_email(
         self,
         to: str,
         subject: str,
         body: str,
-        sender: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Send an email to `to` with `subject` and `body`.
@@ -75,55 +69,38 @@ class EmailService:
         controller — callers no longer pass it explicitly.
         Returns a dict containing delivery details and a unique message ID.
         """
-        from_email = sender or settings.DEFAULT_SENDER_EMAIL
         user_id: Optional[int] = _current_user_id.get()
-        failures: list[str] = []
+        if user_id is None:
+            raise EmailDeliveryError(
+                "Gmail API delivery requires an authenticated app user with a linked Google account."
+            )
 
-        # Attempt 1: Try Gmail API if a user_id is available in context
-        if user_id is not None:
-            try:
-                from initializer import db
-                with db.session_context() as session:
-                    creds_row = db.find_google_credentials(session, user_id)
-            except Exception as exc:
-                logger.exception("Failed to look up Gmail credentials for user_id=%s", user_id)
-                failures.append(f"Gmail credential lookup failed: {exc}")
-            else:
-                if creds_row:
-                    try:
-                        return self._send_via_gmail_api(
-                            creds_row=creds_row,
-                            to=to,
-                            subject=subject,
-                            body=body,
-                        )
-                    except Exception as exc:
-                        logger.exception("Gmail delivery failed to %s", to)
-                        failures.append(f"Gmail delivery failed: {exc}")
-                else:
-                    failures.append("No Gmail credentials are linked to this user")
-                    logger.warning("No Gmail credentials are linked to user_id=%s", user_id)
-        else:
-            failures.append("No authenticated user ID was provided for Gmail delivery")
+        try:
+            from initializer import db
 
-        # Attempt 2: Try SMTP if SMTP_HOST is configured
-        if settings.SMTP_HOST:
-            try:
-                return self._send_via_smtp(
-                    to=to,
-                    subject=subject,
-                    body=body,
-                    from_email=from_email,
-                )
-            except Exception as exc:
-                logger.exception("SMTP delivery failed to %s", to)
-                failures.append(f"SMTP delivery failed: {exc}")
-        else:
-            failures.append("SMTP_HOST is not configured")
+            with db.session_context() as session:
+                creds_row = db.find_google_credentials(session, user_id)
+        except Exception as exc:
+            logger.exception("Failed to look up Gmail credentials for user_id=%s", user_id)
+            raise EmailDeliveryError(f"Gmail credential lookup failed: {exc}") from exc
 
-        failure_message = "; ".join(failures)
-        logger.error("Email was not sent to %s: %s", to, failure_message)
-        raise EmailDeliveryError(f"Email was not sent: {failure_message}")
+        if creds_row is None:
+            raise EmailDeliveryError(
+                "No Gmail account is linked to this user. Connect Google before sending email."
+            )
+
+        try:
+            return self._send_via_gmail_api(
+                creds_row=creds_row,
+                to=to,
+                subject=subject,
+                body=body,
+            )
+        except EmailDeliveryError:
+            raise
+        except Exception as exc:
+            logger.exception("Gmail delivery failed to %s", to)
+            raise EmailDeliveryError(f"Gmail delivery failed: {exc}") from exc
 
     # Reason: Helper to send emails via the official Gmail API using OAuth credentials.
     def _send_via_gmail_api(
@@ -197,49 +174,6 @@ class EmailService:
         }
         self._record_sent_email(record)
         logger.info("Email sent via Gmail API to %s (id=%s)", to, msg_id)
-        return record
-
-    # Reason: Helper to send emails via standard SMTP protocol.
-    def _send_via_smtp(
-        self,
-        to: str,
-        subject: str,
-        body: str,
-        from_email: str,
-    ) -> dict[str, Any]:
-        """Send email using smtplib to a configured SMTP host."""
-        from_email = from_email or settings.SMTP_USER
-        if not from_email:
-            raise EmailDeliveryError(
-                "Configure SMTP_USER or DEFAULT_SENDER_EMAIL to send through SMTP."
-            )
-
-        msg = email.message.EmailMessage()
-        msg["From"] = from_email
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg.set_content(body)
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as server:
-            if settings.SMTP_USE_TLS:
-                server.starttls()
-            if settings.SMTP_USER and settings.SMTP_PASSWORD.get_secret_value():
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD.get_secret_value())
-            server.send_message(msg)
-
-        msg_id = f"smtp_{uuid.uuid4().hex[:12]}"
-        record = {
-            "status": "sent",
-            "provider": "smtp",
-            "message_id": msg_id,
-            "to": to,
-            "from": from_email,
-            "subject": subject,
-            "body": body,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        self._record_sent_email(record)
-        logger.info("Email sent via SMTP to %s (id=%s)", to, msg_id)
         return record
 
     def _record_sent_email(self, record: dict[str, Any]) -> None:

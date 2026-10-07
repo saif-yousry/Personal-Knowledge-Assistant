@@ -5,10 +5,10 @@ Reason: Orchestrates the end-to-end incoming email automation lifecycle:
   1. Parse incoming email to extract metadata (sender, subject, recipients, date) and body.
   2. Format sender, subject, and body into a structured representation for the agent.
   3. Send the structured format and shared system prompt to the agent.
-  4. Require a vector-store search before the agent composes an email reply and calls
+  4. Ingest the incoming email into ChromaDB before the agent can send a reply.
+  5. Require a vector-store search before the agent composes an email reply and calls
      the `send_email_reply` tool.
-  5. Ingest the incoming email and, when sent, the composed reply into ChromaDB
-   through the RAG pipeline.
+  6. Ingest the composed reply after successful delivery.
 """
 
 from __future__ import annotations
@@ -213,14 +213,30 @@ def process_incoming_email(
     user_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """
-    Process an incoming email with the agent, send a reply, and persist both
-    in the vector store upon successful delivery.
+    Index the incoming email before agent processing, then send and index any reply.
     """
     logger.info("Starting automated incoming email processing...")
 
     # Step 1: Parse the incoming email to extract metadata and body
     metadata, incoming_email_obj = parse_incoming_email(incoming_data)
     logger.info("Parsed incoming email ID=%s.", incoming_email_obj.id)
+
+    # Index the incoming message before the agent can invoke the reply tool.
+    from initializer import chunker, dispatcher, embedder, store
+    from rag.pipeline import Pipeline
+
+    rag_pipeline = Pipeline(
+        store=store,
+        embedder=embedder,
+        dispatcher=dispatcher,
+        chunker=chunker,
+    )
+    incoming_chunks_stored = rag_pipeline.run([incoming_email_obj])
+    if incoming_chunks_stored == 0:
+        raise RuntimeError(
+            f"Incoming email {incoming_email_obj.id} produced no stored chunks; "
+            "reply was not sent."
+        )
 
     # Step 2: Format sender, subject, and body into a structured representation
     structured_user_prompt = format_email_for_agent(
@@ -248,10 +264,10 @@ def process_incoming_email(
     last_sent = email_service.get_current_sent_email()
     email_was_sent = last_sent is not None
 
-    chunks_stored = 0
+    chunks_stored = incoming_chunks_stored
     reply_email_obj = None
 
-    # Step 6: After successful sending, store both messages in the vector store.
+    # Store the generated reply after delivery; the incoming message is already indexed.
     if email_was_sent:
         logger.info("Detected successful email dispatch. Preparing both emails for vector store ingestion.")
 
@@ -272,22 +288,13 @@ def process_incoming_email(
             attachments=[],
         )
 
-        # Reason: Store both incoming email and composed reply email in ChromaDB vector store
-        # using the existing unified RAG pipeline (cleaning -> chunking -> embedding -> storage).
+        # Use the existing pipeline to clean, chunk, embed, and store the reply.
         try:
-            from initializer import chunker, dispatcher, embedder, store
-            from rag.pipeline import Pipeline
-
-            rag_pipeline = Pipeline(
-                store=store,
-                embedder=embedder,
-                dispatcher=dispatcher,
-                chunker=chunker,
-            )
-            chunks_stored = rag_pipeline.run([incoming_email_obj, reply_email_obj])
+            reply_chunks_stored = rag_pipeline.run([reply_email_obj])
+            chunks_stored += reply_chunks_stored
             logger.info(
-                "Ingested %d chunks into vector store for incoming (%s) and reply (%s)",
-                chunks_stored,
+                "Ingested %d reply chunks into vector store for incoming (%s) and reply (%s)",
+                reply_chunks_stored,
                 incoming_email_obj.id,
                 reply_email_obj.id,
             )
@@ -296,7 +303,7 @@ def process_incoming_email(
 
         return {
             "status": "success",
-            "message": "Email processed, reply sent, and conversation stored in vector store.",
+            "message": "Incoming email was stored before processing; reply was sent.",
             "email_sent": True,
             "incoming_email_id": incoming_email_obj.id,
             "sender": incoming_email_obj.sender,
@@ -307,12 +314,13 @@ def process_incoming_email(
             "agent_reply": agent_final_text,
         }
 
-    # Never index a new email until its reply has been successfully sent.
-    # (auto responder added part by saif)
-    logger.warning("No reply was sent for email %s; it was not indexed.", incoming_email_obj.id)
+    logger.info(
+        "No reply was sent for email %s; the incoming message remains indexed.",
+        incoming_email_obj.id,
+    )
     return {
         "status": "no_email_sent",
-        "message": "Agent finished without sending a reply. The incoming email was not indexed.",
+        "message": "Agent finished without sending a reply. The incoming email was indexed.",
         "email_sent": False,
         "incoming_email_id": incoming_email_obj.id,
         "sender": incoming_email_obj.sender,

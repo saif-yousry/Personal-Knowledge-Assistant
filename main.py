@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from initializer import db
 from services.gmail_sync_service import run_scheduled_sync
-from routers import app_auth, base_route, chat, discord_auth, discord_ingest, email_agent, gmail_auth, gmail_ingest, pdf_ingest, slack_auth, slack_ingest, telegram_auth, telegram_ingest
+from routers import app_auth, base_route, chat, discord_auth, discord_ingest, gmail_auth, gmail_ingest, pdf_ingest, slack_auth, slack_ingest, telegram_auth, telegram_ingest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

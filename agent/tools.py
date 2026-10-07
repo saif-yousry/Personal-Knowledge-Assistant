@@ -115,8 +115,7 @@ def send_email_reply(arguments: dict) -> ToolResult:
 
 send_email_reply.schema = {
     "description": (
-        "Send a reply to an incoming email using the authenticated user's linked "
-        "Gmail account or SMTP fallback."
+        "Send a reply to an incoming email using the authenticated user's linked Gmail account."
     ),
     "parameters": {
         # Only the reply content is model-controlled; identity and destination stay internal.

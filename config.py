@@ -41,7 +41,6 @@ class Settings(BaseSettings):
         "openid,email,profile,https://www.googleapis.com/auth/gmail.readonly,"
         "https://www.googleapis.com/auth/gmail.send"
     )
-    DEFAULT_SENDER_EMAIL: str = ""
     # Groq / RAG
     GROQ_API_KEY: SecretStr
     GROQ_MODEL: str = "qwen/qwen3.6-27b"

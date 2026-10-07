@@ -1,6 +1,6 @@
 # Personal Knowledge Assistant
 
-Personal Knowledge Assistant is a FastAPI application that collects content from Gmail, Slack, Discord, Telegram, and PDF files. It normalizes the content, creates embeddings, and stores searchable chunks in ChromaDB. An LLM-powered agent can retrieve those chunks during chat and can send email through the configured Gmail API or SMTP transport.
+Personal Knowledge Assistant is a FastAPI application that collects content from Gmail, Slack, Discord, Telegram, and PDF files. It normalizes the content, creates embeddings, and stores searchable chunks in ChromaDB. An LLM-powered agent can retrieve those chunks during chat and can send email through the linked user's Gmail API account.
 
 This document describes the behavior currently implemented in the repository. Gmail history sync polls linked accounts every 60 seconds after ingestion is initialized. Automatic replies can be enabled or disabled per linked Google account in the UI.
 
@@ -31,7 +31,7 @@ Current behavior and limitations:
 
 - **Gmail sync is opt-in.** `/api/v1/ingest` initializes historical ingestion; after that, the application polls linked accounts every 60 seconds for backfill and Gmail history changes. Gmail push/Pub/Sub is not implemented.
 - **Gmail auto-reply is off by default.** Use the Gmail UI toggle, or `GET`/`PUT /api/v1/email/auto-reply/settings`, to read or change the per-account setting. The setting is stored in PostgreSQL.
-- **New synced email is indexed only after a reply.** The app checks the Gmail thread for a later message sent by the account owner. If found, it indexes the incoming/reply exchange without sending another reply. Otherwise, it sends an agent-generated reply only when auto-reply is enabled. Unanswered messages remain unindexed. This rule applies to forward-synced mail; historical backfill continues to index the selected label's old mail without replying.
+- **New auto-replied email is indexed before the reply is sent.** After checking whether the account owner already replied, the service embeds and stores the incoming message before invoking the agent's reply tool. If the owner has already replied, it indexes the exchange and sends no second reply. Historical backfill continues to index the selected label's old mail without replying.
 - **Messages received while auto-reply is disabled stay pending.** Enabling the setting does not itself replay pending messages; a new Gmail thread event (such as an owner reply) is needed for sync to revisit that thread. New incoming messages received while the setting is enabled are handled automatically.
 - The ChromaDB collection is named `knowledge` and is shared by the app. The current vector-store records do not include a user ownership filter, so deployments serving multiple users should not treat the vector store as tenant-isolated.
 - Chat sessions, temporary ingestion statuses, per-user Groq API keys, and email send history are held in process memory. They are lost when the process restarts and are not shared between multiple server workers.
@@ -152,14 +152,6 @@ GROQ_MODEL=qwen/qwen3.6-27b
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Optional SMTP delivery/fallback
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_USE_TLS=true
-DEFAULT_SENDER_EMAIL=assistant@example.com
-
 # Optional Slack integration
 SLACK_CLIENT_ID=
 SLACK_CLIENT_SECRET=
@@ -180,7 +172,7 @@ TELEGRAM_API_HASH=
 Additional configuration notes:
 
 - Gmail OAuth requests read and send access. Users who previously linked Google must reconnect and approve the updated permissions before Gmail API sending works.
-- `SMTP_HOST` is blank by default. Configure the remaining SMTP settings for SMTP delivery. If an authenticated user has linked Gmail credentials, Gmail API delivery is attempted first; SMTP is the fallback. Gmail API sends use the linked account's address; `DEFAULT_SENDER_EMAIL` is only a default sender for SMTP.
+- Email replies are sent only through the authenticated user's linked Gmail API account. There is no SMTP delivery or fallback. The sender is the linked Gmail address.
 - `GROQ_API_KEY` is required at startup and is used by agent chat and email automation.
 - Slack, Discord, and Telegram settings are optional unless using those integrations. Their callback URLs must exactly match the provider settings.
 - `HF_HUB_OFFLINE` and `HF_HUB_DISABLE_XET` default to `1`. Use `python download_model.py` while network access is available to cache the embedding model before launching the application.
@@ -188,7 +180,7 @@ Additional configuration notes:
 
 ## API reference
 
-Most application endpoints require `Authorization: Bearer <access-token>`. The incoming-email endpoint accepts an optional token; its email delivery backend depends on whether a user is authenticated. OAuth provider callbacks are called by the providers and do not use the app JWT in the same way as protected application routes. Check `/docs` for request schemas, optional query parameters, and response models.
+Most application endpoints require an application JWT. OAuth provider callbacks are called by the providers and do not use the app JWT in the same way as protected application routes. Check `/docs` for request schemas, optional query parameters, and response models.
 
 ### Application authentication
 
@@ -252,25 +244,6 @@ The platform ingestion routes accept source-specific query parameters such as ch
 | `PUT` | `/api/v1/settings/groq-api-key` | Store a Groq key in memory for the authenticated user. |
 | `DELETE` | `/api/v1/settings/groq-api-key` | Remove that in-memory user key. |
 
-### Incoming email automation
-
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `POST` | `/api/v1/email/incoming` | Process the submitted email with the agent, send a reply if the agent invokes `send_email_reply`, and index the incoming email and any reply. |
-
-The request accepts `sender`, `body`, optional `subject`, optional `recipients`, and optional raw RFC 822 content in `raw_email`. Example:
-
-```json
-{
-  "sender": "person@example.com",
-  "subject": "Question about my account",
-  "body": "Could you tell me how to update my details?",
-  "recipients": ["assistant@example.com"]
-}
-```
-
-This route remains available for externally supplied messages and runs the direct agent workflow described above. Gmail history sync does not call this route; it passes synchronized Gmail messages to `GmailAutoResponder`, which also checks the account's auto-reply setting and thread for a manual reply. Because this route allows requests without an app token, protect it with an authenticated integration or network-level controls before exposing it publicly.
-
 ### Health and docs
 
 | Method | Endpoint | Purpose |
@@ -295,12 +268,12 @@ The system does not allow a bypass shortcut to start forward processing immediat
 
 ### Process an incoming message and send a reply
 
-1. Gmail history sync passes each newly added message to `GmailAutoResponder`. External callers can alternatively post a supplied message to `/api/v1/email/incoming`; that direct endpoint retains its existing behavior and does not use Gmail sync's opt-in/manual-thread checks.
+1. Gmail history sync passes each newly added message to `GmailAutoResponder`. Incoming email automation is internal to Gmail sync; there is no public endpoint for submitting arbitrary incoming messages.
 2. For Gmail messages, `GmailAutoResponder` fetches the current thread and determines whether a later message was sent by the account owner. If so, it does not send an automatic reply and indexes the incoming/reply exchange once.
-3. If there is no manual reply, the service checks the per-account auto-reply setting. When enabled, the agent searches email history first, composes a grounded reply, and attempts to send it. When disabled, it records the message as pending and does not index it.
-4. After a successful automatic reply, the service indexes the incoming email and generated reply. Gmail message state is persisted to avoid replying to messages already recorded as completed. Gmail history pages are read and deduplicated before the sync checkpoint advances.
+3. If there is no manual reply, the service checks the per-account auto-reply setting. When enabled, it embeds and stores the incoming email first, then the agent searches email history, composes a grounded reply, and attempts to send it. When disabled, it records the message as pending without replying.
+4. After a successful automatic reply, the service indexes the generated reply; the incoming message has already been stored before the send attempt. Gmail message state is persisted to avoid replying to messages already recorded as completed. Gmail history pages are read and deduplicated before the sync checkpoint advances.
 
-The Gmail autoresponder applies to Gmail-history messages and uses the linked account's Gmail API credentials for replies. The separate `POST /api/v1/email/incoming` endpoint remains available for externally supplied messages; it retains its existing agent workflow and does not check the Gmail autoresponder toggle or inspect a Gmail thread for manual replies. With a valid app JWT and a linked Gmail account, Gmail API delivery is attempted. Users with an existing Google connection must reconnect after granting the Gmail send scope. Without a user identity, SMTP must be configured because the Gmail API path requires a user ID. SMTP is also the fallback when Gmail delivery is unavailable. The incoming route catches vector-store errors after sending; therefore, a response can report that the email was sent while `chunks_stored` is zero.
+The Gmail autoresponder applies to Gmail-history messages and sends only through the linked account's Gmail API credentials. Email sending requires an authenticated app user with linked Gmail credentials; SMTP is not supported. Users with an existing Google connection must reconnect after granting the Gmail send scope. Since the incoming email is indexed before the agent runs, a failed or skipped reply does not undo that indexing.
 
 The email cleaner indexes the cleaned body. Chunk metadata includes fields such as `source_type`, `email_id`, sender, recipients, subject, date, and chunk index. Long messages may produce multiple Chroma records.
 
@@ -345,7 +318,7 @@ check.py                 Inspect the latest email in local Chroma data
 - **Embedding model unavailable:** run `python download_model.py` with network access, then restart the API. The app initializes the model during startup/import.
 - **Agent says the Groq key is missing:** set `GROQ_API_KEY` or configure a user key through the settings API. User-provided keys are lost when the server process restarts.
 - **Gmail ingestion says the account is not linked:** complete Google OAuth for the logged-in application user and verify `/auth/google/status`.
-- **Email reply fails:** verify Google send scope and linked credentials, or configure SMTP. Unauthenticated incoming-email requests require SMTP because they have no Google user ID.
+- **Email reply fails:** verify the authenticated user has linked Google credentials and approved the Gmail send scope. SMTP delivery is not supported.
 - **Email was sent but no chunks were stored:** inspect server logs for RAG ingestion errors and check that `VECTOR_STORE_DIR` is writable.
 - **No reply happens for a newly received email:** verify Gmail history sync is initialized and the linked account has the Gmail send scope. Check server logs for agent or delivery errors.
 
